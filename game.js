@@ -1,26 +1,40 @@
-
-var game = new Phaser.Game(800, 600, Phaser.CANVAS, 'phaser-example', { preload: preload, create: create, update: update });
+var settings = {
+    CANVAS: {
+        WIDTH: 800,
+        HEIGHT: 400
+    },
+    GAME: {
+        WIDTH: 2000,
+        HEIGHT: 600
+    }
+}
+var game = new Phaser.Game(settings.CANVAS.WIDTH, settings.CANVAS.HEIGHT, Phaser.CANVAS, 'main-game-canvas', { 
+    preload: preload, 
+    create: create, 
+    update: update,
+    render: render
+});
 
 function preload() {
 
     game.load.image('atari', 'assets/sprites/block.png');
-    game.load.image('background', 'assets/games/starstruck/background2.png');
-    game.load.spritesheet('dude', 'assets/games/starstruck/dude.png', 32, 48);
-
+    game.load.image('background', 'assets/backs/white.png');
+    //https://opengameart.org/content/husky-sprites
+    game.load.spritesheet('dog', 'assets/sprites/dog_75.png', .75*90, .75*59);
+    //https://opengameart.org/content/cat-sprites
+    game.load.spritesheet('cat', 'assets/sprites/cat/cat.png', 40, 30);
 }
 
-var sprite;
-
-var player;
-var facing = 'left';
-var jumpTimer = 0;
-var cursors;
-var jumpButton;
+var dog, cat;
+var cursors, letterKeys;
 var yAxis = p2.vec2.fromValues(0, 1);
 
 function create() {
-
-    bg = game.add.tileSprite(0, 0, 800, 600, 'background');
+    // Load the background
+    bg = game.add.tileSprite(0, 0, settings.GAME.WIDTH, settings.GAME.HEIGHT, 'background');
+    
+    // World boundaries
+    game.world.setBounds(0, 0, settings.GAME.WIDTH, settings.GAME.HEIGHT);
 
     //  Enable p2 physics
     game.physics.startSystem(Phaser.Physics.P2JS);
@@ -30,18 +44,42 @@ function create() {
     game.physics.p2.world.setGlobalStiffness(1e5);
 
     //  Add a sprite
-    player = game.add.sprite(200, 200, 'dude');
-    player.animations.add('left', [0, 1, 2, 3], 10, true);
-    player.animations.add('turn', [4], 20, true);
-    player.animations.add('right', [5, 6, 7, 8], 10, true);
+    dog = game.add.sprite(200, 200, 'dog');
+    dog.animations.add('run', [12, 13, 14, 15, 16], 10, true);
+    dog.animations.add('jump', [16], 10, true);
+    dog.animations.add('idle', [0, 1, 2, 3], 1, true);
+    dog.anchor.setTo(.5, .5);
+    
+    cat = game.add.sprite(300, 200, 'cat');
+    cat.animations.add('run', [2,3,4,5,6,7], 10, true);
+    cat.animations.add('jump', [2], 10, true);
+    cat.animations.add('idle', [0, 1], 1, true);
+    cat.anchor.setTo(.5, .5);
+    
+    dog.facing = 'idle';
+    cat.facing = 'idle';
+    dog.jumpTimer = 0;
+    cat.jumpTimer = 0;
+    
+    playerCenter = game.add.sprite(250, 200);
+    playerCenter.anchor.setTo(.5, .5);
+    
+    players = game.add.group();
+    players.add(dog);
+    players.add(cat);
+    players.add(playerCenter);
 
     //  Enable if for physics. This creates a default rectangular body.
-    game.physics.p2.enable(player);
+    game.physics.p2.enable(dog);
+    game.physics.p2.enable(cat);
     
-    player.body.fixedRotation = true;
-    player.body.damping = 0.5;
+    dog.body.fixedRotation = true;
+    dog.body.damping = 0.5;
+    cat.body.fixedRotation = true;
+    cat.body.damping = 0.5;
 
-    var spriteMaterial = game.physics.p2.createMaterial('spriteMaterial', player.body);
+    var dogMaterial = game.physics.p2.createMaterial('dogMaterial', dog.body);
+    var catMaterial = game.physics.p2.createMaterial('catMaterial', cat.body);
     var worldMaterial = game.physics.p2.createMaterial('worldMaterial');
     var boxMaterial = game.physics.p2.createMaterial('worldMaterial');
 
@@ -61,96 +99,83 @@ function create() {
     //  Here is the contact material. It's a combination of 2 materials, so whenever shapes with
     //  those 2 materials collide it uses the following settings.
 
-    var groundPlayerCM = game.physics.p2.createContactMaterial(spriteMaterial, worldMaterial, { friction: 0.0 });
+    var groundDogCM = game.physics.p2.createContactMaterial(dogMaterial, worldMaterial, { friction: 0.0 });
+    var groundCatCM = game.physics.p2.createContactMaterial(catMaterial, worldMaterial, { friction: 0.0 });
     var groundBoxesCM = game.physics.p2.createContactMaterial(worldMaterial, boxMaterial, { friction: 0.6 });
-
-    //  Here are some more options you can set:
-
-    // contactMaterial.friction = 0.0;     // Friction to use in the contact of these two materials.
-    // contactMaterial.restitution = 0.0;  // Restitution (i.e. how bouncy it is!) to use in the contact of these two materials.
-    // contactMaterial.stiffness = 1e3;    // Stiffness of the resulting ContactEquation that this ContactMaterial generate.
-    // contactMaterial.relaxation = 0;     // Relaxation of the resulting ContactEquation that this ContactMaterial generate.
-    // contactMaterial.frictionStiffness = 1e7;    // Stiffness of the resulting FrictionEquation that this ContactMaterial generate.
-    // contactMaterial.frictionRelaxation = 3;     // Relaxation of the resulting FrictionEquation that this ContactMaterial generate.
-    // contactMaterial.surfaceVelocity = 0.0;        // Will add surface velocity to this material. If bodyA rests on top if bodyB, and the surface velocity is positive, bodyA will slide to the right.
 
     text = game.add.text(20, 20, 'move with arrow, space to jump', { fill: '#ffffff' });
 
     cursors = game.input.keyboard.createCursorKeys();
-    jumpButton = game.input.keyboard.addKey(Phaser.Keyboard.SPACEBAR);
-
+    letterKeys = {
+        left: game.input.keyboard.addKey(Phaser.Keyboard.A),
+        right: game.input.keyboard.addKey(Phaser.Keyboard.D),
+        up: game.input.keyboard.addKey(Phaser.Keyboard.W)
+    };
+    
+    game.camera.follow(playerCenter);
 }
 
-function update() {
-
-    if (cursors.left.isDown)
-    {
+function handlePlayerMovement(player, left, right, up) {
+    if (left.isDown) {
         player.body.moveLeft(200);
-
-        if (facing != 'left')
-        {
-            player.animations.play('left');
-            facing = 'left';
+        if (player.facing != 'left') {
+            player.animations.play('run');
+            player.scale.x = 1;
+            player.facing = 'left';
         }
-    }
-    else if (cursors.right.isDown)
-    {
+    } else if (right.isDown) {
         player.body.moveRight(200);
-
-        if (facing != 'right')
-        {
-            player.animations.play('right');
-            facing = 'right';
+        
+        if (player.facing != 'right') {
+            player.animations.play('run');
+            player.scale.x = -1;
+            player.facing = 'right';
         }
-    }
-    else
-    {
+    } else {
         player.body.velocity.x = 0;
 
-        if (facing != 'idle')
-        {
-            player.animations.stop();
-
-            if (facing == 'left')
-            {
-                player.frame = 0;
-            }
-            else
-            {
-                player.frame = 5;
-            }
-
-            facing = 'idle';
+        if (player.facing != 'idle') {
+            player.animations.play('idle');
+            player.facing = 'idle';
         }
     }
     
-    if (jumpButton.isDown && game.time.now > jumpTimer && checkIfCanJump())
-    {
-        player.body.moveUp(300);
-        jumpTimer = game.time.now + 750;
+    if (checkIfCanJump(player)) {
+        if (up.isDown && game.time.now > player.jumpTimer) {
+            player.body.moveUp(300);
+            player.animations.play('jump');
+            player.jumpTimer = game.time.now + 750;
+        }
     }
-
 }
 
-function checkIfCanJump() {
+function update() {
+    
+    playerCenter.position = Phaser.Point.centroid([dog.position, cat.position])
+    handlePlayerMovement(dog, cursors.left, cursors.right, cursors.up);
+    handlePlayerMovement(cat, letterKeys.left, letterKeys.right, letterKeys.up);
+}
+
+function render() {
+    game.debug.cameraInfo(game.camera, 32, 32);
+    game.debug.spriteCoords(dog, 32, 500);
+}
+
+function checkIfCanJump(player) {
 
     var result = false;
 
-    for (var i=0; i < game.physics.p2.world.narrowphase.contactEquations.length; i++)
-    {
+    for (var i=0; i < game.physics.p2.world.narrowphase.contactEquations.length; i++) {
         var c = game.physics.p2.world.narrowphase.contactEquations[i];
 
-        if (c.bodyA === player.body.data || c.bodyB === player.body.data)
-        {
+        if (c.bodyA === player.body.data || c.bodyB === player.body.data) {
             var d = p2.vec2.dot(c.normalA, yAxis);
 
-            if (c.bodyA === player.body.data)
-            {
+            if (c.bodyA === player.body.data) {
                 d *= -1;
             }
 
-            if (d > 0.5)
-            {
+            if (d > 0.5) {
                 result = true;
             }
         }
@@ -159,3 +184,4 @@ function checkIfCanJump() {
     return result;
 
 }
+
