@@ -4,21 +4,33 @@ var settings = {
         HEIGHT: 400
     },
     GAME: {
-        WIDTH: 2000,
-        HEIGHT: 600
+        WIDTH: 2284,
+        HEIGHT: 1224
+    },
+    START: {
+        X: 4*32,
+        Y: 4*32
     }
 }
-var game = new Phaser.Game(settings.CANVAS.WIDTH, settings.CANVAS.HEIGHT, Phaser.CANVAS, 'main-game-canvas', { 
-    preload: preload, 
-    create: create, 
-    update: update,
-    render: render
-});
+var game = new Phaser.Game(settings.CANVAS.WIDTH, 
+                           settings.CANVAS.HEIGHT, 
+                           Phaser.CANVAS, 
+                           'main-game-canvas', 
+                           { 
+                                preload: preload, 
+                                create: create, 
+                                update: update,
+                                render: render
+                           }
+);
 
 function preload() {
-
-    game.load.image('atari', 'assets/sprites/block.png');
-    game.load.image('background', 'assets/backs/white.png');
+    game.load.image('tiles', 'assets/tilemaps/tiles/Tiles_32x32.png');
+    game.load.tilemap('tilemap', 'assets/tilemaps/maps/lvl1_Foreground.csv', null, Phaser.Tilemap.CSV);
+    game.load.tilemap('backtiles', 'assets/tilemaps/maps/lvl1_Background.csv', null, Phaser.Tilemap.CSV);
+    game.load.tilemap('spikes', 'assets/tilemaps/maps/lvl1_Spikes.csv', null, Phaser.Tilemap.CSV);
+    game.load.image('block', 'assets/sprites/block.png');
+    game.load.image('background', 'assets/backs/sky.png');
     //https://opengameart.org/content/husky-sprites
     game.load.spritesheet('dog', 'assets/sprites/dog_75.png', .75*90, .75*59);
     //https://opengameart.org/content/cat-sprites
@@ -26,12 +38,39 @@ function preload() {
 }
 
 var dog, cat;
+var map;
 var cursors, letterKeys;
 var yAxis = p2.vec2.fromValues(0, 1);
+
+function resetPlayers() {
+    dog.x = settings.START.X-50;
+    cat.x = settings.START.X+50;
+    dog.y = settings.START.Y;
+    cat.y = settings.START.Y;
+    playerCenter.position = Phaser.Point.centroid([dog.position, cat.position])
+}
 
 function create() {
     // Load the background
     bg = game.add.tileSprite(0, 0, settings.GAME.WIDTH, settings.GAME.HEIGHT, 'background');
+    
+    backmap = game.add.tilemap('backtiles', 32, 32);
+    backmap.addTilesetImage('tiles');
+    var groundLayerBack = backmap.createLayer(0);
+    groundLayerBack.resizeWorld();
+    
+    spikeMap = game.add.tilemap('spikes', 32, 32);
+    spikeMap.addTilesetImage('tiles');
+    var groundLayerSpike = spikeMap.createLayer(0);
+    groundLayerSpike.resizeWorld();
+    
+    map = game.add.tilemap('tilemap', 32, 32);
+    map.addTilesetImage('tiles');
+    
+    var groundLayer = map.createLayer(0);
+    groundLayer.resizeWorld();
+    
+    map.setCollisionBetween(0, 100);
     
     // World boundaries
     game.world.setBounds(0, 0, settings.GAME.WIDTH, settings.GAME.HEIGHT);
@@ -44,13 +83,13 @@ function create() {
     game.physics.p2.world.setGlobalStiffness(1e5);
 
     //  Add a sprite
-    dog = game.add.sprite(200, 200, 'dog');
+    dog = game.add.sprite(settings.START.X-50, settings.START.Y, 'dog');
     dog.animations.add('run', [12, 13, 14, 15, 16], 10, true);
     dog.animations.add('jump', [16], 10, true);
     dog.animations.add('idle', [0, 1, 2, 3], 1, true);
     dog.anchor.setTo(.5, .5);
     
-    cat = game.add.sprite(300, 200, 'cat');
+    cat = game.add.sprite(settings.START.X+50, settings.START.Y, 'cat');
     cat.animations.add('run', [2,3,4,5,6,7], 10, true);
     cat.animations.add('jump', [2], 10, true);
     cat.animations.add('idle', [0, 1], 1, true);
@@ -61,7 +100,7 @@ function create() {
     dog.jumpTimer = 0;
     cat.jumpTimer = 0;
     
-    playerCenter = game.add.sprite(250, 200);
+    playerCenter = game.add.sprite(settings.START.X, settings.START.Y);
     playerCenter.anchor.setTo(.5, .5);
     
     players = game.add.group();
@@ -87,14 +126,18 @@ function create() {
     game.physics.p2.setWorldMaterial(worldMaterial, true, true, true, true);
 
     //  A stack of boxes - you'll stick to these
-    for (var i = 1; i < 4; i++)
-    {
-        var box = game.add.sprite(300, 645 - (95 * i), 'atari');
+    var boxes = [
+        // First box puzzle
+        game.add.sprite(600, 200, 'block'),
+        // Second box puzzle
+        game.add.sprite(3*32, 29*32, 'block'),
+    ];
+    boxes.forEach(function(box) {
         game.physics.p2.enable(box);
         box.body.mass = 6;
         // box.body.static = true;
         box.body.setMaterial(boxMaterial);
-    }
+    });
 
     //  Here is the contact material. It's a combination of 2 materials, so whenever shapes with
     //  those 2 materials collide it uses the following settings.
@@ -102,8 +145,10 @@ function create() {
     var groundDogCM = game.physics.p2.createContactMaterial(dogMaterial, worldMaterial, { friction: 0.0 });
     var groundCatCM = game.physics.p2.createContactMaterial(catMaterial, worldMaterial, { friction: 0.0 });
     var groundBoxesCM = game.physics.p2.createContactMaterial(worldMaterial, boxMaterial, { friction: 0.6 });
-
-    text = game.add.text(20, 20, 'move with arrow, space to jump', { fill: '#ffffff' });
+    
+    game.physics.p2.convertTilemap(map, groundLayer);
+    
+    game.physics.p2.setBoundsToWorld(true, true, true, true, false);
 
     cursors = game.input.keyboard.createCursorKeys();
     letterKeys = {
